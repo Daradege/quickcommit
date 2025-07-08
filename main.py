@@ -157,6 +157,10 @@ class CommitMessageGenerator:
                               bg='#f56565', fg='white', padx=20, pady=8)
         clear_btn.pack(side='left')
 
+        quit_btn = tk.Button(buttons_frame, text="Quit", command=lambda: exit(),
+                             font=('Arial', 12), bg='#f56565', fg='white', padx=20, pady=8)
+        quit_btn.pack(side='right')
+
         result_frame = tk.Frame(main_frame, bg='#2d3748')
         result_frame.pack(fill='both', expand=True)
 
