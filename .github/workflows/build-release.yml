@@ -1,0 +1,151 @@
+name: Build and Release Multi-Platform
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  get-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract.outputs.version }}
+    steps:
+    - uses: actions/checkout@v3
+
+    - id: extract
+      run: |
+        echo "🔍 Extracting version from main.py..."
+        version=$(cat version)
+        echo "✅ Version: $version"
+        echo "version=$version" >> $GITHUB_OUTPUT
+        echo "::notice title=Extracted Version::$version"
+
+  build-linux:
+    needs: get-version
+    runs-on: ubuntu-latest
+    outputs:
+      binary-path: dist/QuickCommit
+      appimage-path: QuickCommit-x86_64.AppImage
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget fuse
+        pip install pyinstaller
+
+    - name: Install project dependencies
+      run: pip install -r requirements.txt
+
+
+    - name: Build Linux binary with PyInstaller
+      run: pyinstaller --onefile main.py -n QuickCommit
+
+    - name: Download appimagetool
+      run: |
+        wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+        chmod +x appimagetool-x86_64.AppImage
+
+    - name: Prepare AppDir
+      run: |
+        mkdir -p AppDir/usr/bin
+        cp dist/QuickCommit AppDir/usr/bin/QuickCommit
+        cp icon.png AppDir/
+        # ایجاد فایل دسکتاپ ساده
+        echo -e "[Desktop Entry]\nType=Application\nName=QuickCommit\nExec=QuickCommit\nIcon=icon\nCategories=Utility;" > AppDir/QuickCommit.desktop
+
+    - name: Build AppImage
+      run: ./appimagetool-x86_64.AppImage AppDir
+
+    - name: Upload Linux artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: linux-artifacts
+        path: |
+          dist/QuickCommit
+          QuickCommit-x86_64.AppImage
+
+  build-windows:
+    needs: get-version
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install project dependencies
+      run: pip install -r requirements.txt
+
+    - name: Install PyInstaller
+      run: pip install pyinstaller
+
+    - name: Build Windows exe
+      run: pyinstaller --onefile main.py -n QuickCommit.exe
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: windows-artifact
+        path: dist/QuickCommit.exe
+
+  create-release:
+    needs: [get-version, build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: linux-artifacts
+        path: ./linux_artifacts
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: windows-artifact
+        path: ./windows_artifact
+
+    - id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ needs.get-version.outputs.version }}
+        name: Release v${{ needs.get-version.outputs.version }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Linux binary
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./linux_artifacts/dist/QuickCommit
+        asset_name: QuickCommit-linux
+        asset_content_type: application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload AppImage
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./linux_artifacts/QuickCommit-x86_64.AppImage
+        asset_name: QuickCommit-x86_64.AppImage
+        asset_content_type: application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Windows exe
+      uses: actions/upload-release-asset@v1
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./windows_artifact/QuickCommit.exe
+        asset_name: QuickCommit.exe
+        asset_content_type: application/octet-stream
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
